@@ -213,6 +213,23 @@ mod success {
             .expect("Could not obtain transaction status")
             .take_receipts();
 
+        dbg!(&receipts);
+
+        // Assuming you have a Vec<Receipt> called receipts
+        for receipt in receipts.clone() {
+            match receipt {
+                Receipt::ReturnData { data, .. } | 
+                Receipt::LogData { data, .. } | 
+                Receipt::MessageOut { data, .. } => {
+                    if let Some(data) = data {
+                        // Log the data (You might want to format it as you need)
+                        println!("{:?}", hex::encode(data));
+                    }
+                },
+                _ => {} // Ignore other variants
+            }
+        }
+
         let refund_registered_event = bridge
             .log_decoder()
             .decode_logs_with_type::<RefundRegisteredEvent>(&receipts)

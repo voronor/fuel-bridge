@@ -68,81 +68,92 @@ impl MessageReceiver for Contract {
         // Protect against reentrancy attacks that could allow replaying messages
         reentrancy_guard();
 
+        log(RefundRegisteredEvent {
+            from: ZERO_B256,
+            token_address: ZERO_B256,
+            token_id: ZERO_B256,
+            amount: ZERO_B256,
+        });
+        
         let input_sender = input_message_sender(msg_idx);
-        require(input_sender.value == BRIDGED_TOKEN_GATEWAY, BridgeFungibleTokenError::UnauthorizedSender);
+        log(BRIDGED_TOKEN_GATEWAY);
+        // log(input_sender.value); // Uncomment this and the transaction panics
 
-        let message_data = MessageData::parse(msg_idx);
-        require(message_data.amount != ZERO_B256, BridgeFungibleTokenError::NoCoinsSent);
 
-        // register a refund if tokens don't match
-        if (message_data.token_address != BRIDGED_TOKEN) {
-            register_refund(message_data.from, message_data.token_address, message_data.token_id, message_data.amount);
-            return;
-        };
+        // require(input_sender.value == BRIDGED_TOKEN_GATEWAY, BridgeFungibleTokenError::UnauthorizedSender);
 
-        let res_amount = adjust_deposit_decimals(message_data.amount, DECIMALS, BRIDGED_TOKEN_DECIMALS);
+        // let message_data = MessageData::parse(msg_idx);
+        // require(message_data.amount != ZERO_B256, BridgeFungibleTokenError::NoCoinsSent);
 
-        match res_amount {
-            Result::Err(_) => {
-                // register a refund if value can't be adjusted
-                register_refund(message_data.from, message_data.token_address, message_data.token_id, message_data.amount);
-            },
-            Result::Ok(amount) => {
-                let sub_id = message_data.token_id;
-                let asset_id = AssetId::new(contract_id(), sub_id);
+        // // register a refund if tokens don't match
+        // if (message_data.token_address != BRIDGED_TOKEN) {
+        //     register_refund(message_data.from, message_data.token_address, message_data.token_id, message_data.amount);
+        //     return;
+        // };
 
-                let _ = disable_panic_on_overflow();
+        // let res_amount = adjust_deposit_decimals(message_data.amount, DECIMALS, BRIDGED_TOKEN_DECIMALS);
 
-                let current_total_supply = storage.tokens_minted.get(asset_id).try_read().unwrap_or(0);
-                let new_total_supply = current_total_supply + amount;
+        // match res_amount {
+        //     Result::Err(_) => {
+        //         // register a refund if value can't be adjusted
+        //         register_refund(message_data.from, message_data.token_address, message_data.token_id, message_data.amount);
+        //     },
+        //     Result::Ok(amount) => {
+        //         let sub_id = message_data.token_id;
+        //         let asset_id = AssetId::new(contract_id(), sub_id);
 
-                if new_total_supply < current_total_supply {
-                    register_refund(message_data.from, message_data.token_address, message_data.token_id, message_data.amount);
-                    return;
-                }
+        //         let _ = disable_panic_on_overflow();
 
-                let _ = enable_panic_on_overflow();
+        //         let current_total_supply = storage.tokens_minted.get(asset_id).try_read().unwrap_or(0);
+        //         let new_total_supply = current_total_supply + amount;
 
-                storage.tokens_minted.insert(asset_id, new_total_supply);
+        //         if new_total_supply < current_total_supply {
+        //             register_refund(message_data.from, message_data.token_address, message_data.token_id, message_data.amount);
+        //             return;
+        //         }
 
-                if storage.asset_to_sub_id.get(asset_id).try_read().is_none()
-                {
-                    storage.asset_to_sub_id.insert(asset_id, sub_id);
-                    storage.total_assets.write(storage.total_assets.try_read().unwrap_or(0) + 1);
-                };
+        //         let _ = enable_panic_on_overflow();
 
-                // mint tokens & update storage
-                mint(sub_id, amount);
+        //         storage.tokens_minted.insert(asset_id, new_total_supply);
 
-                // when depositing to an address, msg_data.len is ADDRESS_DEPOSIT_DATA_LEN bytes.
-                // when depositing to a contract, msg_data.len is CONTRACT_DEPOSIT_WITHOUT_DATA_LEN bytes.
-                // If msg_data.len is > CONTRACT_DEPOSIT_WITHOUT_DATA_LEN bytes, 
-                // we must call `process_message()` on the receiving contract, forwarding the newly minted coins with the call.
-                match message_data.len {
-                    ADDRESS_DEPOSIT_DATA_LEN => {
-                        transfer(message_data.to, asset_id, amount);
-                    },
-                    CONTRACT_DEPOSIT_WITHOUT_DATA_LEN => {
-                        transfer(message_data.to, asset_id, amount);
-                    },
-                    _ => {
-                        if let Identity::ContractId(id) = message_data.to {
-                            let dest_contract = abi(MessageReceiver, id.into());
-                            dest_contract.process_message {
-                                coins: amount,
-                                asset_id: asset_id.into(),
-                            }(msg_idx);
-                        };
-                    },
-                }
+        //         if storage.asset_to_sub_id.get(asset_id).try_read().is_none()
+        //         {
+        //             storage.asset_to_sub_id.insert(asset_id, sub_id);
+        //             storage.total_assets.write(storage.total_assets.try_read().unwrap_or(0) + 1);
+        //         };
 
-                log(DepositEvent {
-                    to: message_data.to,
-                    from: message_data.from,
-                    amount: amount,
-                });
-            }
-        }
+        //         // mint tokens & update storage
+        //         mint(sub_id, amount);
+
+        //         // when depositing to an address, msg_data.len is ADDRESS_DEPOSIT_DATA_LEN bytes.
+        //         // when depositing to a contract, msg_data.len is CONTRACT_DEPOSIT_WITHOUT_DATA_LEN bytes.
+        //         // If msg_data.len is > CONTRACT_DEPOSIT_WITHOUT_DATA_LEN bytes, 
+        //         // we must call `process_message()` on the receiving contract, forwarding the newly minted coins with the call.
+        //         match message_data.len {
+        //             ADDRESS_DEPOSIT_DATA_LEN => {
+        //                 transfer(message_data.to, asset_id, amount);
+        //             },
+        //             CONTRACT_DEPOSIT_WITHOUT_DATA_LEN => {
+        //                 transfer(message_data.to, asset_id, amount);
+        //             },
+        //             _ => {
+        //                 if let Identity::ContractId(id) = message_data.to {
+        //                     let dest_contract = abi(MessageReceiver, id.into());
+        //                     dest_contract.process_message {
+        //                         coins: amount,
+        //                         asset_id: asset_id.into(),
+        //                     }(msg_idx);
+        //                 };
+        //             },
+        //         }
+
+        //         log(DepositEvent {
+        //             to: message_data.to,
+        //             from: message_data.from,
+        //             amount: amount,
+        //         });
+        //     }
+        // }
     }
 }
 
